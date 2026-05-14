@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>講義音声ノートAI</title>
+  <?!= HtmlService.createHtmlOutputFromFile('style').getContent(); ?>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Phosphor Icons for modern icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+  <div class="app-container">
+    <header>
+      <h1><i class="ph ph-waveform"></i> Lecture Audio Notes</h1>
+      <p>音声をスマートに文字起こし・要約</p>
+    </header>
+
+    <main>
+      <section class="input-section">
+        <div class="form-group">
+          <label for="apiKey"><i class="ph ph-key"></i> APIキー</label>
+          <input type="password" id="apiKey" placeholder="未入力の場合はGASのプロパティを使用">
+        </div>
+
+        <div class="form-group">
+          <label for="lectureName"><i class="ph ph-book-bookmark"></i> 講義名</label>
+          <input type="text" id="lectureName" placeholder="例：経済学入門 第1回" required>
+        </div>
+
+        <div class="form-group">
+          <label for="audioFile" class="file-upload-label">
+            <div class="file-upload-design">
+              <i class="ph ph-upload-simple"></i>
+              <span id="fileNameDisplay">音声ファイルを選択</span>
+              <small>MP3, WAV, M4A</small>
+            </div>
+            <input type="file" id="audioFile" accept="audio/*" required>
+          </label>
+        </div>
+
+        <button id="executeBtn" class="primary-btn">
+          <span>AIノートを作成する</span>
+          <i class="ph ph-play-circle"></i>
+        </button>
+      </section>
+
+      <section class="results-section" id="resultsSection" style="display: none;">
+        <div class="result-card">
+          <div class="result-header">
+            <h2><i class="ph ph-text-aa"></i> 文字起こし</h2>
+            <button class="icon-btn copy-btn" data-target="transcriptionResult">
+              <i class="ph ph-copy"></i>
+              <span>コピー</span>
+            </button>
+          </div>
+          <div class="result-content" id="transcriptionResult">
+            <!-- 文字起こし結果がここに入ります -->
+          </div>
+        </div>
+
+        <div class="result-card">
+          <div class="result-header">
+            <h2><i class="ph ph-list-dashes"></i> AI要約＆要点</h2>
+            <button class="icon-btn copy-btn" data-target="summaryResult">
+              <i class="ph ph-copy"></i>
+              <span>コピー</span>
+            </button>
+          </div>
+          <div class="result-content" id="summaryResult">
+            <!-- 要約結果がここに入ります -->
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const WEB_APP_URL = "<?= WEB_APP_URL ?>";
+  </script>
+  <?!= HtmlService.createHtmlOutputFromFile('main').getContent(); ?>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<script>
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const audioFileInput = document.getElementById('audioFile');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const fileUploadDesign = document.querySelector('.file-upload-design');
+  const executeBtn = document.getElementById('executeBtn');
+  const resultsSection = document.getElementById('resultsSection');
+  const transcriptionResult = document.getElementById('transcriptionResult');
+  const summaryResult = document.getElementById('summaryResult');
+  const copyBtns = document.querySelectorAll('.copy-btn');
+  const btnIcon = executeBtn.querySelector('i');
+  const btnText = executeBtn.querySelector('span');
+
+  // Load from localStorage
+  const savedApiKey = localStorage.getItem('GEMINI_API_KEY');
+  const savedLectureName = localStorage.getItem('LECTURE_NAME');
+  if (savedApiKey) document.getElementById('apiKey').value = savedApiKey;
+  if (savedLectureName) document.getElementById('lectureName').value = savedLectureName;
+
+  // Handle file selection
+  audioFileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      const fileName = e.target.files[0].name;
+      fileNameDisplay.textContent = fileName;
+      fileUploadDesign.classList.add('has-file');
+      
+      // Update icon to success check
+      const icon = fileUploadDesign.querySelector('i');
+      icon.className = 'ph ph-check-circle';
+    } else {
+      fileNameDisplay.textContent = '音声ファイルを選択';
+      fileUploadDesign.classList.remove('has-file');
+      const icon = fileUploadDesign.querySelector('i');
+      icon.className = 'ph ph-upload-simple';
+    }
+  });
+
+  // Handle execute button
+  executeBtn.addEventListener('click', async () => {
+    const apiKey = document.getElementById('apiKey').value;
+    const lectureName = document.getElementById('lectureName').value;
+    const file = audioFileInput.files[0];
+
+    // Basic validation
+    if (!lectureName || !file) {
+      showToast('講義名と音声ファイルは必須です', true);
+      return;
+    }
+
+    // UI Loading state
+    executeBtn.classList.add('loading');
+    btnText.textContent = '音声ファイルを準備中...';
+    btnIcon.className = 'ph ph-spinner gap';
+    executeBtn.disabled = true;
+
+    // localStorageに保存
+    localStorage.setItem('GEMINI_API_KEY', apiKey);
+    localStorage.setItem('LECTURE_NAME', lectureName);
+
+    // GASを経由してGemini APIへfetchする
+    try {
+      // 音声ファイルをBase64に変換
+      const audioBase64 = await readFileAsBase64(file);
+      const mimeType = file.type || 'audio/mp3';
+      
+      btnText.textContent = '文字起こし中...';
+
+      // 1. 文字起こしリクエストを送信
+      const transResponse = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ 
+          message: `次の音声を文字起こししてください。講義名は「${lectureName}」です。出力は文字起こしテキストのみにしてください。`,
+          apiKey: apiKey,
+          audioData: audioBase64,
+          mimeType: mimeType
+        })
+      });
+
+      if (!transResponse.ok) throw new Error(`HTTP Error ${transResponse.status}`);
+      const transResult = await transResponse.json();
+      if (!transResult.success) throw new Error(`GAS Error (文字起こし): ${transResult.error}`);
+      
+      const transcribedText = transResult.data;
+
+      // 文字起こし結果を画面に表示
+      resultsSection.style.display = 'block';
+      transcriptionResult.innerHTML = transcribedText.replace(/\n/g, '<br>');
+      
+      // 要約の準備状態を表示
+      summaryResult.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-light);"><i class="ph ph-spinner" style="animation: spin 1s linear infinite; display:inline-block; font-size:24px;"></i><p style="margin-top:10px;">要約を生成中...</p></div>';
+      resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // 2. 要約リクエストを送信 (音声データなし、テキストのみ)
+      btnText.textContent = '要約中...';
+
+      const prompt = `
+以下の講義内容を、指定されたフォーマットで厳格に整理してください。
+挨拶、前置き、タイトル（「要約結果」など）は一切不要です。
+内容が不足していても、必ず以下の項目名とスタイルを守ってください。
+
+１、3行要約
+（ここに内容を3行で記述）
+
+２、重要ポイント
+（記号を付けずに1行ずつ内容を記述）
+（記号なしの箇条書き2行目）
+（記号なしの箇条書き3行目）
+
+【講義内容】
+${transcribedText}
+`;
+
+      const sumResponse = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ 
+          message: prompt,
+          apiKey: apiKey
+        })
+      });
+
+      if (!sumResponse.ok) throw new Error(`HTTP Error ${sumResponse.status}`);
+      const sumResult = await sumResponse.json();
+      if (!sumResult.success) throw new Error(`GAS Error (要約): ${sumResult.error}`);
+
+      // 要約結果を表示
+      summaryResult.innerHTML = formatResultToHtml(sumResult.data);
+
+      // スクロールアニメーション
+      resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showToast('処理が完了しました');
+
+    } catch (error) {
+      showToast('エラーが発生しました: ' + error.message, true);
+      console.error(error);
+    } finally {
+      // 状態を戻す
+      executeBtn.classList.remove('loading');
+      btnText.textContent = 'AIノートを作成する';
+      btnIcon.className = 'ph ph-play-circle';
+      executeBtn.disabled = false;
+    }
+  });
+
+  // Handle copy buttons
+  copyBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-target');
+      const targetElement = document.getElementById(targetId);
+      // innerText handles visibility and basic formatting, then trim extra whitespace
+      const textToCopy = (targetElement.innerText || targetElement.textContent).trim();
+      
+      // Don't copy if empty or contains only the placeholder
+      if (!textToCopy || textToCopy === '結果がここに表示されます。') return;
+
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        const icon = btn.querySelector('i');
+        const span = btn.querySelector('span');
+        const originalIcon = 'ph ph-copy';
+        const originalText = 'コピー';
+
+        // Visual Feedback
+        icon.className = 'ph ph-check';
+        span.textContent = 'コピーしました！';
+        btn.classList.add('success');
+        
+        showToast('クリップボードにコピーしました');
+
+        // Revert state after 2 seconds
+        setTimeout(() => {
+          icon.className = originalIcon;
+          span.textContent = originalText;
+          btn.classList.remove('success');
+        }, 2000);
+      });
+    });
+  });
+
+  // Helper function to format AI result into semantic HTML
+  function formatResultToHtml(text) {
+    const lines = text.split('\n');
+    let html = '';
+    let inList = false;
+    let currentSection = '';
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (inList) {
+          html += '</ul>';
+          inList = false;
+        }
+        return;
+      }
+
+      if (trimmed === '１、3行要約') {
+        if (inList) { html += '</ul>'; inList = false; }
+        currentSection = 'summary';
+        html += `<h3 class="result-subheader">${trimmed}</h3>`;
+      } else if (trimmed === '２、重要ポイント') {
+        if (inList) { html += '</ul>'; inList = false; }
+        currentSection = 'points';
+        html += `<h3 class="result-subheader">${trimmed}</h3>`;
+        html += '<ul class="fancy-list">';
+        inList = true;
+      } else {
+        if (currentSection === 'points' && inList) {
+          // AI might still add bullets, so we strip them just in case
+          const content = trimmed.replace(/^[・\-\*\s]+/, '');
+          html += `<li>${content}</li>`;
+        } else {
+          html += `<p class="result-paragraph">${trimmed}</p>`;
+        }
+      }
+    });
+
+    if (inList) html += '</ul>';
+    return html;
+  }
+
+  // Toast notification system
+  function showToast(message, isError = false) {
+    // 既存のトーストがあれば削除
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    
+    if (isError) {
+      toast.style.background = 'var(--danger)';
+    }
+
+    document.body.appendChild(toast);
+
+    // Force reflow
+    toast.offsetHeight;
+    
+    toast.classList.add('show');
+
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+});
+</script>
